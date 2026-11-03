@@ -5,10 +5,20 @@
 Консольный узел для [d256-panel](https://github.com/dest1256/d256-panel). Запускает Xray-core (как Go-библиотеку), применяет конфиг от панели,
 отправляет статистику. GUI нет. Основан на идеях [3x-ui](https://github.com/MHSanaei/3x-ui) (MHSanaei и контрибьюторы), изменения © dest1256, GPL-3.0.
 
-> Статус: разработка (этап 2 из 8): есть только каркас CLI. Архитектура: [d256-panel/docs/ARCHITECTURE.md](https://github.com/dest1256/d256-panel/blob/main/docs/ARCHITECTURE.md).
+> Статус: разработка (этап 3 из 8): регистрация, mTLS-канал, heartbeat и метрики. Xray ещё не встроен. Архитектура: [d256-panel/docs/ARCHITECTURE.md](https://github.com/dest1256/d256-panel/blob/main/docs/ARCHITECTURE.md).
 
 ## Команды
 `run`, `enroll <panel-url> <token>`, `status`, `logs`, `reload`, `reset`, `version`.
+
+## Регистрация узла
+1. В панели: **Узлы → Добавить** (имя, публичный адрес) → панель покажет одноразовый токен (1 час).
+2. На сервере узла (токен через stdin, чтобы не попал в историю и `ps`):
+```
+echo '<token>' | docker run --rm -i -v node-data:/var/lib/d256-node d256-node:local enroll https://panel.example.com -
+docker compose up -d
+```
+Ключ узла создаётся на самом узле и никуда не передаётся. `d256-node status` показывает состояние связи.
+Отзыв: в панели «Новый токен» (старый сертификат перестаёт приниматься) или удаление узла.
 
 ## Разработка (только Docker)
 Репозитории `d256-node` и `d256-panel` должны лежать рядом (общий proto-модуль).
@@ -30,7 +40,7 @@ make image && docker compose up -d
 Console node for [d256-panel](https://github.com/dest1256/d256-panel). Runs Xray-core as a Go library, applies the panel's config and reports statistics. No GUI.
 Derived from ideas of [3x-ui](https://github.com/MHSanaei/3x-ui); changes © dest1256; GPL-3.0.
 
-> Status: work in progress (stage 2 of 8): CLI skeleton only.
+> Status: work in progress (stage 3 of 8): enrollment, mTLS link, heartbeat and metrics. Xray is not embedded yet.
 
 **Commands:** `run`, `enroll <panel-url> <token>`, `status`, `logs`, `reload`, `reset`, `version`.
 **Development (Docker only):** keep `d256-node` and `d256-panel` side by side, then `./dev make verify`.

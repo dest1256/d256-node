@@ -8,11 +8,14 @@ WORKDIR /src/d256-node
 RUN go mod download
 COPY d256-node/ ./
 ARG VERSION=dev
-RUN CGO_ENABLED=0 go build -trimpath -ldflags "-w -s -X github.com/dest1256/d256-node/internal/version.Version=${VERSION}" -o /out/d256-node ./cmd/d256-node
+RUN CGO_ENABLED=0 go build -trimpath -ldflags "-w -s -X github.com/dest1256/d256-node/internal/version.Version=${VERSION}" -o /out/d256-node ./cmd/d256-node \
+ && mkdir -p /out/state
 
 FROM gcr.io/distroless/static-debian12:nonroot
 COPY --from=builder /out/d256-node /usr/local/bin/d256-node
+COPY --from=builder --chown=65532:65532 /out/state /var/lib/d256-node
 USER nonroot:nonroot
+ENV D256_STATE_DIR=/var/lib/d256-node
 VOLUME ["/var/lib/d256-node"]
 ENTRYPOINT ["/usr/local/bin/d256-node"]
 CMD ["run"]

@@ -1,4 +1,5 @@
 # Changelog
 
 ## Unreleased
-- Repository skeleton: CLI stubs (`run`, `enroll`, `status`, `logs`, `reload`, `reset`, `version`), dev container, Makefile, CI, static runtime image.
+- Stage 3: `enroll` (local key generation, CSR, one-time token), mTLS gRPC client with reconnect/backoff, heartbeat + RTT, host metrics, `status`/`logs`/`reload`/`reset`.
+- Stage 2: repository skeleton.
