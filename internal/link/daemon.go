@@ -137,6 +137,7 @@ func (d *Daemon) restoreFromCache() {
 	d.Log.Info("started from the cached state", "version", st.Version, "age", time.Since(time.Unix(st.SavedUnix, 0)).Round(time.Second))
 	if st.Limits != nil {
 		d.enf.SetSnapshot(st.Limits)
+		d.applyDeviceLimits(st.Limits)
 		if stored, err := d.jr.Batches(); err == nil {
 			for _, b := range stored {
 				d.enf.AddUsage(b.Entries)
@@ -364,6 +365,9 @@ func (d *Daemon) session(parent context.Context, id *state.Identity, tlsCfg *tls
 		xs, xerr, xver := d.Xray.Status()
 		jb := d.Metrics.JournalBytes
 		d.setStatus(func(s *state.Status) { s.XrayState, s.ConfigVersion, s.JournalBytes = xs, xver, jb })
+		if err := send(&pb.NodeToPanel{Msg: &pb.NodeToPanel_ActiveConnections{ActiveConnections: d.Xray.Conns().Snapshot()}}); err != nil {
+			return err
+		}
 		if err := send(&pb.NodeToPanel{Msg: &pb.NodeToPanel_XrayStatus{XrayStatus: &pb.XrayStatus{
 			State: xs, Error: xerr, Version: xrayrun.Version(), AppliedStateVersion: xver,
 			OnlineUsers: d.Xray.OnlineEmails(5000),
@@ -404,8 +408,20 @@ func (d *Daemon) appliedVersion() uint64 {
 // onLimits adopts a fresh limits snapshot from the panel and remembers it for offline starts.
 func (d *Daemon) onLimits(s *pb.LimitsSnapshot) {
 	d.enf.SetSnapshot(s)
+	d.applyDeviceLimits(s)
 	d.mu.Lock()
 	d.limits = s
 	d.mu.Unlock()
 	d.saveCache(0, nil)
+}
+
+// applyDeviceLimits hands the per-client device limits to the connection tracker.
+func (d *Daemon) applyDeviceLimits(s *pb.LimitsSnapshot) {
+	lim := make(map[string]uint32, len(s.GetClients()))
+	for _, c := range s.GetClients() {
+		if c.DeviceLimit > 0 {
+			lim[c.Email] = c.DeviceLimit
+		}
+	}
+	d.Xray.Conns().SetDeviceLimits(lim)
 }

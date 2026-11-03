@@ -23,6 +23,8 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	pb "github.com/dest1256/d256-panel/proto/nodelink/v1"
+
+	"github.com/dest1256/d256-node/internal/connstats"
 )
 
 // State values reported to the panel.
@@ -52,13 +54,15 @@ type Runner struct {
 	version uint64
 	state   string
 	errText string
+	// conns records per-connection usage across core restarts.
+	conns *connstats.Store
 	// carry holds usage read from instances that were closed since the last Collect.
 	carry map[key]usage
 }
 
 // New returns a runner with nothing running.
 func New(log *slog.Logger) *Runner {
-	return &Runner{log: log, state: StateNotConfigured, carry: map[key]usage{}}
+	return &Runner{log: log, state: StateNotConfigured, carry: map[key]usage{}, conns: connstats.NewStore()}
 }
 
 // Version is the core version this node embeds.
@@ -71,11 +75,13 @@ func (r *Runner) Status() (state, errText string, version uint64) {
 	return r.state, r.errText, r.version
 }
 
-func build(cfgJSON []byte) (*core.Instance, error) {
+// build parses the config and creates (but does not start) a core whose dispatcher records connections.
+func (r *Runner) build(cfgJSON []byte) (*core.Instance, error) {
 	cfg, err := serial.LoadJSONConfig(bytes.NewReader(cfgJSON))
 	if err != nil {
 		return nil, fmt.Errorf("parse config: %w", err)
 	}
+	connstats.Install(cfg, r.conns)
 	inst, err := core.New(cfg)
 	if err != nil {
 		return nil, fmt.Errorf("create core: %w", err)
@@ -106,7 +112,7 @@ func (r *Runner) Apply(ds *pb.DesiredState) error {
 }
 
 func (r *Runner) restartLocked(version uint64, cfgJSON []byte) error {
-	next, err := build(cfgJSON)
+	next, err := r.build(cfgJSON)
 	if err != nil {
 		r.setError(err)
 		return err
@@ -136,7 +142,7 @@ func (r *Runner) restoreLocked(prevJSON []byte) {
 	if prevJSON == nil {
 		return
 	}
-	inst, err := build(prevJSON)
+	inst, err := r.build(prevJSON)
 	if err == nil {
 		if err = inst.Start(); err != nil {
 			_ = inst.Close()
@@ -358,3 +364,6 @@ func (r *Runner) Config() []byte {
 	}
 	return bytes.Clone(r.cfgJSON)
 }
+
+// Conns exposes the connection store (usage per destination, live connections, device limits).
+func (r *Runner) Conns() *connstats.Store { return r.conns }

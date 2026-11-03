@@ -48,7 +48,7 @@ func config(port int, clients ...string) []byte {
              "system": {"statsInboundUplink": true, "statsInboundDownlink": true}},
   "inbounds": [{"tag": "in1", "listen": "127.0.0.1", "port": %d, "protocol": "vless",
                 "settings": {"clients": [%s], "decryption": "none"}}],
-  "outbounds": [{"protocol": "freedom", "tag": "direct"}]
+  "outbounds": [{"protocol": "freedom", "tag": "direct", "settings": {"finalRules": [{"action": "allow"}]}}]
 }`, port, cl)
 }
 

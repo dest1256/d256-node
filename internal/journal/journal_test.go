@@ -207,3 +207,43 @@ func TestMergeCoversBothRangesAndSpans(t *testing.T) {
 		t.Fatalf("merged = %+v", m)
 	}
 }
+
+func TestPerDestinationUsageSurvivesStorageAndCompactionPerHour(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "j.db")
+	j := open(t, path, 3000)
+	defer j.Close()
+	var wantDown uint64
+	for i := 0; i < 300; i++ {
+		hour := int64(i%3) * 3600
+		conns := []*pb.ConnEntry{
+			{Email: "a@x", InboundTag: "in", Dest: "example.com", Network: "tcp", HourUnix: hour, Up: 1, Down: 10, Conns: 1},
+			{Email: "a@x", InboundTag: "in", Dest: "1.2.3.4", Network: "udp", HourUnix: hour, Up: 1, Down: 5, Conns: 1},
+		}
+		wantDown += 15
+		seq := j.AllocSeq()
+		if err := j.Put(Batch{From: seq, To: seq, Start: hour, End: hour + 5, Conns: conns}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	bs, err := j.Batches()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(bs) >= 300 {
+		t.Fatalf("no compaction: %d", len(bs))
+	}
+	var down uint64
+	hours := map[int64]bool{}
+	for _, b := range bs {
+		for _, c := range b.Conns {
+			down += c.Down
+			hours[c.HourUnix] = true
+		}
+	}
+	if down != wantDown {
+		t.Fatalf("per-destination usage changed: %d != %d", down, wantDown)
+	}
+	if len(hours) != 3 {
+		t.Fatalf("hourly resolution lost: %v", hours)
+	}
+}

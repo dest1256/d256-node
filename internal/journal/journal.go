@@ -46,11 +46,12 @@ type Batch struct {
 	From, To   uint64
 	Start, End int64 // unix seconds of the measurement span
 	Entries    []*pb.TrafficEntry
+	Conns      []*pb.ConnEntry
 }
 
 // Proto converts the batch to its wire form.
 func (b Batch) Proto() *pb.TrafficBatch {
-	return &pb.TrafficBatch{FromSeq: b.From, ToSeq: b.To, Entries: b.Entries, StartUnix: b.Start, EndUnix: b.End}
+	return &pb.TrafficBatch{FromSeq: b.From, ToSeq: b.To, Entries: b.Entries, StartUnix: b.Start, EndUnix: b.End, Conns: b.Conns}
 }
 
 // Journal is safe for concurrent use.
@@ -192,7 +193,7 @@ func (j *Journal) openRow(sealed []byte) (Batch, error) {
 	if err := proto.Unmarshal(raw, &p); err != nil {
 		return Batch{}, err
 	}
-	return Batch{From: p.FromSeq, To: p.ToSeq, Start: p.StartUnix, End: p.EndUnix, Entries: p.Entries}, nil
+	return Batch{From: p.FromSeq, To: p.ToSeq, Start: p.StartUnix, End: p.EndUnix, Entries: p.Entries, Conns: p.Conns}, nil
 }
 
 // Epoch identifies this node's sequence space towards the panel.

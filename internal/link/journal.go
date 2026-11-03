@@ -72,11 +72,12 @@ func (d *Daemon) tick(send func(*pb.NodeToPanel) error) error {
 	defer d.tickMu.Unlock()
 
 	entries := d.collectUsage()
+	conns := d.Xray.Conns().Drain()
 	now := time.Now().Unix()
-	if len(entries) > 0 {
+	if len(entries) > 0 || len(conns) > 0 {
 		d.enf.AddUsage(entries)
 		seq := d.jr.AllocSeq()
-		b := journal.Batch{From: seq, To: seq, Start: d.lastTick, End: now, Entries: entries}
+		b := journal.Batch{From: seq, To: seq, Start: d.lastTick, End: now, Entries: entries, Conns: conns}
 		d.mu.Lock()
 		online := d.online
 		if online {

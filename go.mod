@@ -6,6 +6,9 @@ require (
 	github.com/dest1256/d256-panel/proto v0.0.0
 	github.com/shirou/gopsutil/v4 v4.26.10
 	github.com/xtls/xray-core v1.260327.1-0.20261021115930-1b1647cd9ddf
+	go.etcd.io/bbolt v1.5.0
+	golang.org/x/crypto v0.58.0
+	golang.org/x/net v0.61.0
 	google.golang.org/grpc v1.86.0-dev
 	google.golang.org/protobuf v1.36.12
 )
@@ -48,12 +51,9 @@ require (
 	github.com/xtls/reality v0.0.0-20261014101318-83f621788ca8 // indirect
 	github.com/yuin/gopher-lua v1.1.2 // indirect
 	github.com/yusufpapurcu/wmi v1.2.4 // indirect
-	go.etcd.io/bbolt v1.5.0 // indirect
 	go4.org/netipx v0.0.0-20231129151722-fdeea329fbba // indirect
-	golang.org/x/crypto v0.58.0 // indirect
 	golang.org/x/crypto/x509roots/fallback v0.0.0-20261020153306-9f2b28d4331a // indirect
 	golang.org/x/exp v0.0.0-20240506185415-9bf2ced13842 // indirect
-	golang.org/x/net v0.61.0 // indirect
 	golang.org/x/sync v0.24.0 // indirect
 	golang.org/x/sys v0.49.0 // indirect
 	golang.org/x/text v0.43.0 // indirect
