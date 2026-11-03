@@ -19,6 +19,8 @@ const (
 	statusFile = "status.json"
 	pidFile    = "d256-node.pid"
 	logFile    = "node.log"
+	cacheFile  = "cache.bin"
+	journalDB  = "journal.db"
 )
 
 // ErrNotEnrolled is returned when the node has no stored identity.
@@ -52,6 +54,10 @@ func DefaultDir() Dir {
 }
 
 func (d Dir) path(name string) string { return filepath.Join(string(d), name) }
+
+// CachePath and JournalPath locate the sealed offline data.
+func (d Dir) CachePath() string   { return d.path(cacheFile) }
+func (d Dir) JournalPath() string { return d.path(journalDB) }
 
 // LogPath, PIDPath and StatusPath locate the runtime files.
 func (d Dir) LogPath() string    { return d.path(logFile) }
@@ -115,7 +121,7 @@ func (d Dir) Load() (*Identity, error) {
 // Reset removes keys, certificates and runtime files.
 func (d Dir) Reset() error {
 	var firstErr error
-	for _, n := range []string{infoFile, keyFile, certFile, caFile, statusFile, pidFile} {
+	for _, n := range []string{infoFile, keyFile, certFile, caFile, statusFile, pidFile, cacheFile, journalDB} {
 		if err := os.Remove(d.path(n)); err != nil && !os.IsNotExist(err) && firstErr == nil {
 			firstErr = err
 		}

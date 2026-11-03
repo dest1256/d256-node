@@ -102,11 +102,11 @@ func (r *Runner) Apply(ds *pb.DesiredState) error {
 			r.log.Warn("hot update failed, restarting xray", "err", err)
 		}
 	}
-	return r.restart(ds)
+	return r.restartLocked(ds.Version, ds.XrayConfigJson)
 }
 
-func (r *Runner) restart(ds *pb.DesiredState) error {
-	next, err := build(ds.XrayConfigJson)
+func (r *Runner) restartLocked(version uint64, cfgJSON []byte) error {
+	next, err := build(cfgJSON)
 	if err != nil {
 		r.setError(err)
 		return err
@@ -126,9 +126,9 @@ func (r *Runner) restart(ds *pb.DesiredState) error {
 		}
 		return err
 	}
-	r.inst, r.cfgJSON, r.version = next, bytes.Clone(ds.XrayConfigJson), ds.Version
+	r.inst, r.cfgJSON, r.version = next, bytes.Clone(cfgJSON), version
 	r.state, r.errText = StateRunning, ""
-	r.log.Info("xray started", "version", ds.Version, "core", core.Version())
+	r.log.Info("xray started", "version", version, "core", core.Version())
 	return nil
 }
 
@@ -325,4 +325,36 @@ func (r *Runner) OnlineUsers() int {
 		return true
 	})
 	return n
+}
+
+// OnlineEmails lists up to limit users that currently have a connection.
+func (r *Runner) OnlineEmails(limit int) []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.inst == nil {
+		return nil
+	}
+	sm, _ := r.inst.GetFeature(stats.ManagerType()).(stats.Manager)
+	if sm == nil {
+		return nil
+	}
+	var out []string
+	sm.VisitOnlineMaps(func(name string, om stats.OnlineMap) bool {
+		if email, ok := strings.CutPrefix(name, "user>>>"); ok && om.Count() > 0 {
+			email = strings.TrimSuffix(email, ">>>online")
+			out = append(out, email)
+		}
+		return len(out) < limit
+	})
+	return out
+}
+
+// Config returns the configuration the core currently runs (nil when stopped).
+func (r *Runner) Config() []byte {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.inst == nil {
+		return nil
+	}
+	return bytes.Clone(r.cfgJSON)
 }

@@ -172,7 +172,11 @@ func cmdRun(e env, o *cmdOpts) error {
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	d := link.New(o.dir, log)
+	d, err := link.New(o.dir, log, link.Options{})
+	if err != nil {
+		return err
+	}
+	defer d.Close()
 	hup := make(chan os.Signal, 1)
 	signal.Notify(hup, syscall.SIGHUP)
 	defer signal.Stop(hup)
@@ -187,8 +191,7 @@ func cmdRun(e env, o *cmdOpts) error {
 			}
 		}
 	}()
-	err := d.Run(ctx)
-	d.Xray.Stop()
+	err = d.Run(ctx)
 	log.Info("d256-node stopped")
 	return err
 }
