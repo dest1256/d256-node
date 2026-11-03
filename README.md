@@ -5,7 +5,7 @@
 Консольный узел для [d256-panel](https://github.com/dest1256/d256-panel). Запускает Xray-core (как Go-библиотеку), применяет конфиг от панели,
 отправляет статистику. GUI нет. Основан на идеях [3x-ui](https://github.com/MHSanaei/3x-ui) (MHSanaei и контрибьюторы), изменения © dest1256, GPL-3.0.
 
-> Статус: разработка (этап 3 из 8): регистрация, mTLS-канал, heartbeat и метрики. Xray ещё не встроен. Архитектура: [d256-panel/docs/ARCHITECTURE.md](https://github.com/dest1256/d256-panel/blob/main/docs/ARCHITECTURE.md).
+> Статус: разработка (этап 4 из 8): Xray встроен, конфиг и трафик ходят через панель. Офлайн-кэш и журнал на диске — этап 5. Архитектура: [d256-panel/docs/ARCHITECTURE.md](https://github.com/dest1256/d256-panel/blob/main/docs/ARCHITECTURE.md).
 
 ## Команды
 `run`, `enroll <panel-url> <token>`, `status`, `logs`, `reload`, `reset`, `version`.
@@ -40,7 +40,7 @@ make image && docker compose up -d
 Console node for [d256-panel](https://github.com/dest1256/d256-panel). Runs Xray-core as a Go library, applies the panel's config and reports statistics. No GUI.
 Derived from ideas of [3x-ui](https://github.com/MHSanaei/3x-ui); changes © dest1256; GPL-3.0.
 
-> Status: work in progress (stage 3 of 8): enrollment, mTLS link, heartbeat and metrics. Xray is not embedded yet.
+> Status: work in progress (stage 4 of 8): Xray is embedded; config and traffic flow through the panel. Disk cache and journal come in stage 5.
 
 **Commands:** `run`, `enroll <panel-url> <token>`, `status`, `logs`, `reload`, `reset`, `version`.
 **Development (Docker only):** keep `d256-node` and `d256-panel` side by side, then `./dev make verify`.
