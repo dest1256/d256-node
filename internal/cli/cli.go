@@ -188,6 +188,7 @@ func cmdRun(e env, o *cmdOpts) error {
 		}
 	}()
 	err := d.Run(ctx)
+	d.Xray.Stop()
 	log.Info("d256-node stopped")
 	return err
 }

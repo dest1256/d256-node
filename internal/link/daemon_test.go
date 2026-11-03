@@ -12,6 +12,7 @@ import (
 	"log/slog"
 	"math/big"
 	"net"
+	"strconv"
 	"sync"
 	"testing"
 	"time"
@@ -89,6 +90,11 @@ type fakePanel struct {
 	metrics  int
 	failOnce bool // drop the first connection right after the handshake
 	deny     bool
+
+	desired  *pb.DesiredState // sent right after the handshake when set
+	acks     []*pb.StateAck
+	batches  []*pb.TrafficBatch
+	ackLevel uint64 // what the panel claims to have applied; batches up to it are acknowledged
 }
 
 func (f *fakePanel) Connect(st pb.NodeLink_ConnectServer) error {
@@ -109,6 +115,10 @@ func (f *fakePanel) Connect(st pb.NodeLink_ConnectServer) error {
 	if drop {
 		return status.Error(codes.Unavailable, "test drop")
 	}
+	_ = st.Send(&pb.PanelToNode{Msg: &pb.PanelToNode_JournalAck{JournalAck: &pb.JournalAck{AckedSeq: f.ackLevel}}})
+	if f.desired != nil {
+		_ = st.Send(&pb.PanelToNode{Msg: &pb.PanelToNode_DesiredState{DesiredState: f.desired}})
+	}
 	for {
 		m, err := st.Recv()
 		if err != nil {
@@ -121,6 +131,19 @@ func (f *fakePanel) Connect(st pb.NodeLink_ConnectServer) error {
 			f.mu.Lock()
 			f.metrics++
 			f.mu.Unlock()
+		case *pb.NodeToPanel_StateAck:
+			f.mu.Lock()
+			f.acks = append(f.acks, x.StateAck)
+			f.mu.Unlock()
+		case *pb.NodeToPanel_Traffic:
+			f.mu.Lock()
+			f.batches = append(f.batches, x.Traffic)
+			if x.Traffic.FromSeq == f.ackLevel+1 {
+				f.ackLevel = x.Traffic.ToSeq
+			}
+			level := f.ackLevel
+			f.mu.Unlock()
+			_ = st.Send(&pb.PanelToNode{Msg: &pb.PanelToNode_JournalAck{JournalAck: &pb.JournalAck{AckedSeq: level}}})
 		}
 	}
 }
@@ -220,5 +243,65 @@ func TestDaemonRejectsUntrustedServer(t *testing.T) {
 	}
 	if s, err := d.Dir.ReadStatus(); err == nil && s.Connected {
 		t.Fatal("status claims connected")
+	}
+}
+
+func TestDaemonAppliesDesiredStateAndAcks(t *testing.T) {
+	p := newPKI(t)
+	port := 0
+	if l, err := (&net.ListenConfig{}).Listen(context.Background(), "tcp", "127.0.0.1:0"); err == nil {
+		port = l.Addr().(*net.TCPAddr).Port
+		l.Close()
+	}
+	cfg := []byte(`{"log":{"loglevel":"none"},"stats":{},"inbounds":[{"tag":"in1","listen":"127.0.0.1","port":` + strconv.Itoa(port) + `,"protocol":"vless","settings":{"clients":[],"decryption":"none"}}],"outbounds":[{"protocol":"freedom","tag":"direct"}]}`)
+	fp := &fakePanel{desired: &pb.DesiredState{Version: 5, XrayConfigJson: cfg}}
+	d, _ := startDaemon(t, p, fp)
+	waitFor(t, "state ack", func() bool {
+		fp.mu.Lock()
+		defer fp.mu.Unlock()
+		return len(fp.acks) == 1 && fp.acks[0].Ok && fp.acks[0].Version == 5
+	})
+	waitFor(t, "xray status", func() bool {
+		s, err := d.Dir.ReadStatus()
+		return err == nil && s.XrayState == "running" && s.ConfigVersion == 5
+	})
+}
+
+func TestDaemonResendsUnacknowledgedTraffic(t *testing.T) {
+	p := newPKI(t)
+	fp := &fakePanel{}
+	d, _ := startDaemon(t, p, fp)
+	waitFor(t, "connected", func() bool { s, err := d.Dir.ReadStatus(); return err == nil && s.Connected })
+
+	// Three batches are queued; the panel acknowledges them in order.
+	d.mu.Lock()
+	for i := uint64(1); i <= 3; i++ {
+		d.pending = append(d.pending, trafficBatch{from: i, to: i, entries: []*pb.TrafficEntry{{Name: "u", Up: i, Down: i}}})
+	}
+	d.nextSeq = 4
+	d.mu.Unlock()
+	waitFor(t, "all batches acknowledged", func() bool {
+		d.mu.Lock()
+		defer d.mu.Unlock()
+		return len(d.pending) == 0
+	})
+	fp.mu.Lock()
+	defer fp.mu.Unlock()
+	if len(fp.batches) != 3 || fp.batches[0].FromSeq != 1 || fp.batches[2].ToSeq != 3 {
+		t.Fatalf("batches sent: %+v", fp.batches)
+	}
+}
+
+func TestMergeBatchesKeepsTotalsAndRange(t *testing.T) {
+	a := trafficBatch{from: 1, to: 1, entries: []*pb.TrafficEntry{{Name: "u", Up: 1, Down: 2}, {Inbound: true, Name: "in", Up: 5}}}
+	b := trafficBatch{from: 2, to: 4, entries: []*pb.TrafficEntry{{Name: "u", Up: 10, Down: 20}}}
+	m := mergeBatches(a, b)
+	if m.from != 1 || m.to != 4 || len(m.entries) != 2 {
+		t.Fatalf("merged = %+v", m)
+	}
+	for _, e := range m.entries {
+		if !e.Inbound && (e.Up != 11 || e.Down != 22) {
+			t.Fatalf("user totals = %+v", e)
+		}
 	}
 }

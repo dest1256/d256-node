@@ -26,6 +26,7 @@ import (
 	"github.com/dest1256/d256-node/internal/state"
 	"github.com/dest1256/d256-node/internal/sysmetrics"
 	"github.com/dest1256/d256-node/internal/version"
+	"github.com/dest1256/d256-node/internal/xrayrun"
 )
 
 const (
@@ -43,6 +44,14 @@ type Daemon struct {
 	Dir     state.Dir
 	Log     *slog.Logger
 	Metrics *sysmetrics.Collector
+	Xray    *xrayrun.Runner
+
+	// Traffic journal (in memory until the disk journal of stage 5): batches not yet acknowledged by
+	// the panel, in sequence order, plus the next sequence to assign.
+	epoch   uint64
+	pending []trafficBatch
+	nextSeq uint64
+	sentTo  uint64
 
 	reconnect chan struct{}
 	mu        sync.Mutex
@@ -52,9 +61,11 @@ type Daemon struct {
 // New builds a daemon.
 func New(dir state.Dir, log *slog.Logger) *Daemon {
 	return &Daemon{
-		Dir: dir, Log: log, Metrics: sysmetrics.New(),
+		Dir: dir, Log: log, Metrics: sysmetrics.New(), Xray: xrayrun.New(log),
+		epoch:     randomEpoch(),
+		nextSeq:   1,
 		reconnect: make(chan struct{}, 1),
-		st:        state.Status{XrayState: "not_configured"},
+		st:        state.Status{XrayState: xrayrun.StateNotConfigured},
 	}
 }
 
@@ -164,10 +175,13 @@ func (d *Daemon) session(parent context.Context, id *state.Identity, tlsCfg *tls
 	}
 
 	if err := send(&pb.NodeToPanel{Msg: &pb.NodeToPanel_Hello{Hello: &pb.Hello{
-		ProtocolVersion: uint32(pb.ProtocolVersion_PROTOCOL_VERSION_1),
-		NodeVersion:     version.Version,
-		Os:              runtime.GOOS,
-		Arch:            runtime.GOARCH,
+		ProtocolVersion:     uint32(pb.ProtocolVersion_PROTOCOL_VERSION_1),
+		NodeVersion:         version.Version,
+		XrayVersion:         xrayrun.Version(),
+		Os:                  runtime.GOOS,
+		Arch:                runtime.GOARCH,
+		JournalEpoch:        d.epoch,
+		AppliedStateVersion: d.appliedVersion(),
 	}}}); err != nil {
 		return err
 	}
@@ -175,6 +189,7 @@ func (d *Daemon) session(parent context.Context, id *state.Identity, tlsCfg *tls
 	var rtt atomic.Uint32
 	var lastEcho atomic.Int64
 	lastEcho.Store(time.Now().UnixNano())
+	desiredCh := make(chan *pb.DesiredState, 1)
 	ackCh := make(chan *pb.HelloAck, 1)
 	errCh := make(chan error, 1)
 	go func() {
@@ -190,11 +205,17 @@ func (d *Daemon) session(parent context.Context, id *state.Identity, tlsCfg *tls
 				ackCh <- m.GetHelloAck()
 				continue
 			}
-			if hb := m.GetHeartbeat(); hb != nil {
+			switch {
+			case m.GetHeartbeat() != nil:
+				hb := m.GetHeartbeat()
 				ms := uint32(max(time.Since(time.Unix(0, hb.UnixNanos)).Milliseconds(), 0))
 				rtt.Store(ms)
 				lastEcho.Store(time.Now().UnixNano())
 				d.setStatus(func(s *state.Status) { s.LatencyMs = ms })
+			case m.GetDesiredState() != nil:
+				enqueue(desiredCh, m.GetDesiredState())
+			case m.GetJournalAck() != nil:
+				d.onJournalAck(m.GetJournalAck().AckedSeq)
 			}
 		}
 	}()
@@ -219,18 +240,26 @@ func (d *Daemon) session(parent context.Context, id *state.Identity, tlsCfg *tls
 	d.Log.Info("connected to panel", "addr", id.Info.GRPCAddr, "node_id", id.Info.NodeID)
 	d.setStatus(func(s *state.Status) { s.Connected, s.LastConnected, s.LastError = true, time.Now().Unix(), "" })
 
+	d.resetSent()
+	go d.applyLoop(ctx, desiredCh, send)
+
 	sendRound := func() error {
 		hb := &pb.Heartbeat{UnixNanos: time.Now().UnixNano(), LastRttMs: rtt.Load()}
 		if err := send(&pb.NodeToPanel{Msg: &pb.NodeToPanel_Heartbeat{Heartbeat: hb}}); err != nil {
 			return err
 		}
+		d.Metrics.OnlineClients = uint32(d.Xray.OnlineUsers())
 		if err := send(&pb.NodeToPanel{Msg: &pb.NodeToPanel_SystemMetrics{SystemMetrics: d.Metrics.Sample()}}); err != nil {
 			return err
 		}
-		d.mu.Lock()
-		xs := d.st.XrayState
-		d.mu.Unlock()
-		return send(&pb.NodeToPanel{Msg: &pb.NodeToPanel_XrayStatus{XrayStatus: &pb.XrayStatus{State: xs}}})
+		xs, xerr, xver := d.Xray.Status()
+		d.setStatus(func(s *state.Status) { s.XrayState, s.ConfigVersion = xs, xver })
+		if err := send(&pb.NodeToPanel{Msg: &pb.NodeToPanel_XrayStatus{XrayStatus: &pb.XrayStatus{
+			State: xs, Error: xerr, Version: xrayrun.Version(), AppliedStateVersion: xver,
+		}}}); err != nil {
+			return err
+		}
+		return d.sendTraffic(send)
 	}
 	if err := sendRound(); err != nil {
 		return err
