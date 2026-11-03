@@ -1,0 +1,6 @@
+build/
+.env
+*.db
+*.key
+*.pem
+.cache/

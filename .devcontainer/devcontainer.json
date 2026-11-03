@@ -1,0 +1,8 @@
+{
+  "name": "d256-node",
+  "build": { "dockerfile": "Dockerfile", "context": "." },
+  "workspaceFolder": "/src/d256-node",
+  "workspaceMount": "source=${localWorkspaceFolder}/..,target=/src,type=bind",
+  "mounts": ["source=d256-cache,target=/cache,type=volume"],
+  "customizations": { "vscode": { "extensions": ["golang.go"] } }
+}

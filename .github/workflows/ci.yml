@@ -1,0 +1,24 @@
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      # Sibling layout expected by go.mod's replace and ./dev.
+      - uses: actions/checkout@v4
+        with: { path: d256-node }
+      - uses: actions/checkout@v4
+        with: { repository: dest1256/d256-panel, path: d256-panel }
+      - name: Build dev container
+        run: docker build -t d256-node-dev d256-node/.devcontainer
+      - name: Lint, test, build
+        run: d256-node/dev make verify
+      - name: Build runtime image (not pushed)
+        run: cd d256-node && docker build -f Dockerfile -t d256-node:ci --build-context panel=../d256-panel ..

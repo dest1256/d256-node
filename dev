@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# Run any command inside the dev container: ./dev make test | ./dev bash
+# The parent directory is mounted so ../d256-panel/proto resolves (see go.mod replace).
+set -euo pipefail
+cd "$(dirname "$0")"
+export MSYS_NO_PATHCONV=1
+IMG=d256-node-dev
+docker image inspect "$IMG" >/dev/null 2>&1 || docker build -t "$IMG" .devcontainer
+exec docker run --rm ${D256_TTY:+-it} \
+  -v "$(cd .. && pwd):/src" \
+  -v d256-cache:/cache \
+  -w /src/d256-node "$IMG" "${@:-bash}"
