@@ -52,9 +52,6 @@ const (
 type Options struct {
 	// JournalMaxBytes caps the disk journal (default journal.DefaultMaxBytes).
 	JournalMaxBytes int64
-	// Secret overrides the key material the local data is sealed with (protected mode); by default it
-	// is derived from the node's private key.
-	Secret []byte
 }
 
 // Daemon owns the reconnecting session and the node's offline state.
@@ -94,11 +91,7 @@ func New(dir state.Dir, log *slog.Logger, opts Options) (*Daemon, error) {
 	if err != nil {
 		return nil, err
 	}
-	secret := opts.Secret
-	if len(secret) == 0 {
-		secret = id.KeyPEM
-	}
-	sealer, err := vault.FromSecret(secret, "node-local-data")
+	sealer, err := vault.FromSecret(id.KeyPEM, "node-local-data")
 	if err != nil {
 		return nil, err
 	}
