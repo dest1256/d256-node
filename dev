@@ -9,4 +9,5 @@ docker image inspect "$IMG" >/dev/null 2>&1 || docker build -t "$IMG" .devcontai
 exec docker run --rm ${D256_TTY:+-it} \
   -v "$(cd .. && pwd):/src" \
   -v d256-cache:/cache \
+  -e D256_SIGNING_KEY \
   -w /src/d256-node "$IMG" "${@:-bash}"
