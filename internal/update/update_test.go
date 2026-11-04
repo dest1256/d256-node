@@ -351,3 +351,23 @@ func TestOnlyTheCurrentAndPreviousReleaseAreKept(t *testing.T) {
 		t.Fatalf("kept %v", dirs)
 	}
 }
+
+func TestSourceRepoComesFromTheBuildAndIsValid(t *testing.T) {
+	if got := SourceRepo(); !ValidRepo(got) || got != "dest1256/d256-node" {
+		t.Fatalf("SourceRepo() = %q", got)
+	}
+	old := repoFile
+	defer func() { repoFile = old }()
+	for in, want := range map[string]string{
+		"someone/their-fork\n": "someone/their-fork",
+		"":                     DefaultRepo,
+		"../../evil":           DefaultRepo,
+		"a/b/c":                DefaultRepo,
+		"has space/x":          DefaultRepo,
+	} {
+		repoFile = in
+		if got := SourceRepo(); got != want {
+			t.Errorf("repo.txt %q -> %q, want %q", in, got, want)
+		}
+	}
+}

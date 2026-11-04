@@ -22,6 +22,8 @@ jobs:
         with: { repository: dest1256/d256-panel, path: d256-panel }
       - name: A signing key must be built in
         run: test -s d256-node/internal/update/signing.pub
+      - name: Nodes must follow this repository's releases
+        run: test "$(tr -d '[:space:]' < d256-node/internal/update/repo.txt)" = "$GITHUB_REPOSITORY"
       - name: Build dev container
         run: docker build -t d256-node-dev d256-node/.devcontainer
       - name: Verify

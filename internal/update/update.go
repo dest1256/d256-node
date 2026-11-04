@@ -30,8 +30,14 @@ import (
 //go:embed signing.pub
 var signingPub string
 
+// repoFile names the GitHub repository (owner/name) releases are downloaded from. A fork edits this file and
+// signing.pub together, so its nodes follow its own releases and trust only its own key.
+//
+//go:embed repo.txt
+var repoFile string
+
 const (
-	// DefaultRepo is where releases are downloaded from.
+	// DefaultRepo is used when repo.txt is empty or malformed.
 	DefaultRepo = "dest1256/d256-node"
 	maxBinary   = 256 << 20
 	maxSig      = 4 << 10
@@ -133,9 +139,17 @@ type Updater struct {
 // New returns an Updater for the node whose state lives in dir, with the build's signing key.
 func New(dir, current string) *Updater {
 	return &Updater{
-		Dir: dir, Current: current, Repo: DefaultRepo, BaseURL: DefaultBaseURL,
+		Dir: dir, Current: current, Repo: SourceRepo(), BaseURL: DefaultBaseURL,
 		PubKey: PublicKey(), GOOS: runtime.GOOS, GOARCH: runtime.GOARCH,
 	}
+}
+
+// SourceRepo returns the repository releases are downloaded from (from repo.txt, validated).
+func SourceRepo() string {
+	if r := strings.TrimSpace(repoFile); ValidRepo(r) {
+		return r
+	}
+	return DefaultRepo
 }
 
 // PublicKey returns the key compiled into this build, or nil when none is configured.
