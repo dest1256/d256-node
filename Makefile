@@ -45,6 +45,10 @@ build: ## Static binary ./build/d256-node
 image: ## Runtime image (needs ../d256-panel next to this repo)
 	docker build -t d256-node:local --build-context panel=../d256-panel .
 
+.PHONY: keygen
+keygen: ## Create the release signing key (writes internal/update/signing.pub, prints the private key once)
+	$(RUN) go run ./cmd/d256-sign keygen
+
 .PHONY: verify
 verify: lint test build vulncheck ## Full gate (mirrors CI)
 	@echo "verify: OK"

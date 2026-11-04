@@ -22,6 +22,7 @@ import (
 	"github.com/dest1256/d256-node/internal/link"
 	"github.com/dest1256/d256-node/internal/logx"
 	"github.com/dest1256/d256-node/internal/state"
+	"github.com/dest1256/d256-node/internal/update"
 	"github.com/dest1256/d256-node/internal/version"
 )
 
@@ -163,6 +164,11 @@ func cmdRun(e env, o *cmdOpts) error {
 	if !o.dir.Enrolled() {
 		return state.ErrNotEnrolled
 	}
+	upd := update.New(string(o.dir), version.Version)
+	// An installed update takes over here (this call does not return); otherwise the embedded binary runs.
+	if err := upd.MaybeExec(os.Args[1:], os.Environ()); err != nil {
+		return fmt.Errorf("start the installed update: %w", err)
+	}
 	log := logx.New(o.logFormat, o.dir.LogPath())
 	if err := os.WriteFile(o.dir.PIDPath(), []byte(strconv.Itoa(os.Getpid())), 0o600); err != nil {
 		return fmt.Errorf("write pid file: %w", err)
@@ -172,7 +178,18 @@ func cmdRun(e env, o *cmdOpts) error {
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	d, err := link.New(o.dir, log, link.Options{})
+	upgraded := make(chan struct{}, 1)
+	opts := link.Options{OnUpgraded: func() {
+		select {
+		case upgraded <- struct{}{}:
+		default:
+		}
+		stop()
+	}}
+	if upd.Enabled() {
+		opts.Updater = upd
+	}
+	d, err := link.New(o.dir, log, opts)
 	if err != nil {
 		return err
 	}
@@ -192,6 +209,17 @@ func cmdRun(e env, o *cmdOpts) error {
 		}
 	}()
 	err = d.Run(ctx)
+	select {
+	case <-upgraded:
+		// Shut down cleanly (journal flushed, Xray stopped), then become the new binary.
+		d.Close()
+		_ = os.Remove(o.dir.PIDPath())
+		log.Info("restarting into the installed update", "version", upd.Installed())
+		if xerr := upd.ExecCurrent(os.Args[1:], os.Environ()); xerr != nil {
+			return fmt.Errorf("restart into the update: %w", xerr)
+		}
+	default:
+	}
 	log.Info("d256-node stopped")
 	return err
 }

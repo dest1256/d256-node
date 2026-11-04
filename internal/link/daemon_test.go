@@ -94,12 +94,14 @@ type fakePanel struct {
 	failOnce bool // drop the first connection right after the handshake
 	deny     bool
 
-	desired *pb.DesiredState // sent after the handshake when set
-	limits  *pb.LimitsSnapshot
-	acks    []*pb.StateAck
-	batches []*pb.TrafficBatch // every batch received, duplicates included
-	applied []*pb.TrafficBatch // batches accepted exactly once
-	acked   uint64
+	desired        *pb.DesiredState // sent after the handshake when set
+	limits         *pb.LimitsSnapshot
+	acks           []*pb.StateAck
+	batches        []*pb.TrafficBatch // every batch received, duplicates included
+	applied        []*pb.TrafficBatch // batches accepted exactly once
+	acked          uint64
+	upgrade        *pb.UpgradeRequest // sent after the handshake when set
+	upgradeResults []*pb.UpgradeResult
 	// ignoreTraffic makes the panel receive batches without ever applying or acknowledging them.
 	ignoreTraffic bool
 }
@@ -132,6 +134,9 @@ func (f *fakePanel) Connect(st pb.NodeLink_ConnectServer) error {
 	if f.limits != nil {
 		_ = st.Send(&pb.PanelToNode{Msg: &pb.PanelToNode_Limits{Limits: f.limits}})
 	}
+	if f.upgrade != nil {
+		_ = st.Send(&pb.PanelToNode{Msg: &pb.PanelToNode_Upgrade{Upgrade: f.upgrade}})
+	}
 	for {
 		m, err := st.Recv()
 		if err != nil {
@@ -147,6 +152,10 @@ func (f *fakePanel) Connect(st pb.NodeLink_ConnectServer) error {
 		case *pb.NodeToPanel_StateAck:
 			f.mu.Lock()
 			f.acks = append(f.acks, x.StateAck)
+			f.mu.Unlock()
+		case *pb.NodeToPanel_UpgradeResult:
+			f.mu.Lock()
+			f.upgradeResults = append(f.upgradeResults, x.UpgradeResult)
 			f.mu.Unlock()
 		case *pb.NodeToPanel_Traffic:
 			f.mu.Lock()

@@ -1,0 +1,51 @@
+# Publishes a node release: signed static binaries that nodes download when the panel asks them to update.
+# Push a tag like v1.2.3. Needs the repository secret D256_SIGNING_KEY (see README, "Releases") and the public
+# key committed in internal/update/signing.pub.
+name: Release
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Tag must look like v1.2.3
+        run: echo "$GITHUB_REF_NAME" | grep -Eq '^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z]+(\.[0-9A-Za-z]+)*)?$'
+      # Sibling layout expected by go.mod's replace and ./dev.
+      - uses: actions/checkout@v4
+        with: { path: d256-node }
+      - uses: actions/checkout@v4
+        with: { repository: dest1256/d256-panel, path: d256-panel }
+      - name: A signing key must be built in
+        run: test -s d256-node/internal/update/signing.pub
+      - name: Build dev container
+        run: docker build -t d256-node-dev d256-node/.devcontainer
+      - name: Verify
+        run: d256-node/dev make verify
+      - name: Build and sign
+        env:
+          D256_SIGNING_KEY: ${{ secrets.D256_SIGNING_KEY }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          test -n "$D256_SIGNING_KEY"
+          d256-node/dev sh -c '
+            set -e
+            rm -rf dist && mkdir dist
+            for arch in amd64 arm64; do
+              CGO_ENABLED=0 GOOS=linux GOARCH=$arch go build -trimpath \
+                -ldflags "-w -s -X github.com/dest1256/d256-node/internal/version.Version='"$TAG"'" \
+                -o dist/d256-node_linux_$arch ./cmd/d256-node
+              go run ./cmd/d256-sign sign "'"$TAG"'" linux $arch dist/d256-node_linux_$arch
+            done
+            (cd dist && sha256sum d256-node_linux_* > SHA256SUMS)
+          '
+      - name: The amd64 binary reports the tag
+        run: d256-node/dist/d256-node_linux_amd64 version | grep -q "d256-node $GITHUB_REF_NAME "
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" d256-node/dist/* --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" --generate-notes

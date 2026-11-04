@@ -52,6 +52,18 @@ const (
 type Options struct {
 	// JournalMaxBytes caps the disk journal (default journal.DefaultMaxBytes).
 	JournalMaxBytes int64
+	// Updater installs signed releases on the panel's request (nil: the node cannot update itself).
+	Updater Updater
+	// OnUpgraded is called after a release was installed and the panel was told; the process then restarts
+	// into the new binary.
+	OnUpgraded func()
+}
+
+// Updater is the part of the self-update machinery the daemon needs.
+type Updater interface {
+	Install(ctx context.Context, version string) error
+	// Confirm marks the running binary as working once it has reached the panel.
+	Confirm()
 }
 
 // Daemon owns the reconnecting session and the node's offline state.
@@ -70,6 +82,10 @@ type Daemon struct {
 	collectUsage func() []*pb.TrafficEntry
 
 	reconnect chan struct{}
+
+	upd        Updater
+	onUpgraded func()
+	upgrading  atomic.Bool
 
 	tickMu   sync.Mutex // serialises usage collection
 	lastTick int64
@@ -103,8 +119,9 @@ func New(dir state.Dir, log *slog.Logger, opts Options) (*Daemon, error) {
 		Dir: dir, Log: log, Metrics: sysmetrics.New(), Xray: xrayrun.New(log),
 		id: id, sealer: sealer, jr: jr, enf: limits.New(),
 		reconnect: make(chan struct{}, 1),
-		lastTick:  time.Now().Unix(),
-		st:        state.Status{XrayState: xrayrun.StateNotConfigured},
+		upd:       opts.Updater, onUpgraded: opts.OnUpgraded,
+		lastTick: time.Now().Unix(),
+		st:       state.Status{XrayState: xrayrun.StateNotConfigured},
 	}
 	d.collectUsage = d.Xray.Collect
 	d.restoreFromCache()
@@ -319,6 +336,8 @@ func (d *Daemon) session(parent context.Context, id *state.Identity, tlsCfg *tls
 				d.onJournalAck(m.GetJournalAck().AckedSeq)
 			case m.GetLimits() != nil:
 				d.onLimits(m.GetLimits())
+			case m.GetUpgrade() != nil:
+				d.onUpgrade(m.GetUpgrade().Version, send)
 			}
 		}
 	}()
@@ -341,6 +360,9 @@ func (d *Daemon) session(parent context.Context, id *state.Identity, tlsCfg *tls
 		return nil
 	}
 	d.Log.Info("connected to panel", "addr", id.Info.GRPCAddr, "node_id", id.Info.NodeID)
+	if d.upd != nil {
+		d.upd.Confirm()
+	}
 	d.goOnline()
 	d.setStatus(func(s *state.Status) { s.Connected, s.LastConnected, s.LastError = true, time.Now().Unix(), "" })
 	go d.applyLoop(ctx, desiredCh, send)
@@ -417,4 +439,45 @@ func (d *Daemon) applyDeviceLimits(s *pb.LimitsSnapshot) {
 		}
 	}
 	d.Xray.Conns().SetDeviceLimits(lim)
+}
+
+// onUpgrade installs the requested release in the background and reports the outcome to the panel. On
+// success the node restarts into the new binary (see OnUpgraded).
+func (d *Daemon) onUpgrade(version string, send func(*pb.NodeToPanel) error) {
+	reply := func(err error) {
+		res := &pb.UpgradeResult{Version: version, Ok: err == nil}
+		if err != nil {
+			res.Error = err.Error()
+			if len(res.Error) > 500 {
+				res.Error = res.Error[:500]
+			}
+		}
+		_ = send(&pb.NodeToPanel{Msg: &pb.NodeToPanel_UpgradeResult{UpgradeResult: res}})
+	}
+	if d.upd == nil {
+		reply(errors.New("this node cannot update itself"))
+		return
+	}
+	if !d.upgrading.CompareAndSwap(false, true) {
+		reply(errors.New("an update is already in progress"))
+		return
+	}
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Minute)
+		defer cancel()
+		d.Log.Info("update requested by the panel", "version", version)
+		err := d.upd.Install(ctx, version)
+		if err != nil {
+			d.Log.Error("update failed", "version", version, "err", err)
+			d.upgrading.Store(false)
+			reply(err)
+			return
+		}
+		d.Log.Info("update installed, restarting", "version", version)
+		reply(nil)
+		time.Sleep(time.Second) // let the reply leave before the link is torn down
+		if d.onUpgraded != nil {
+			d.onUpgraded()
+		}
+	}()
 }

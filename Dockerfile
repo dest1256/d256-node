@@ -9,7 +9,11 @@ COPY --from=panel proto /src/d256-panel/proto
 RUN go mod download
 COPY . .
 ARG VERSION=dev
-RUN CGO_ENABLED=0 go build -trimpath -ldflags "-w -s -X github.com/dest1256/d256-node/internal/version.Version=${VERSION}" -o /out/d256-node ./cmd/d256-node \
+# Only the end-to-end test sets UPDATE_BASE_URL (a local release server); production images never do.
+ARG UPDATE_BASE_URL=
+RUN LD="-w -s -X github.com/dest1256/d256-node/internal/version.Version=${VERSION}"; \
+    if [ -n "$UPDATE_BASE_URL" ]; then LD="$LD -X github.com/dest1256/d256-node/internal/update.DefaultBaseURL=$UPDATE_BASE_URL"; fi; \
+    CGO_ENABLED=0 go build -trimpath -ldflags "$LD" -o /out/d256-node ./cmd/d256-node \
  && mkdir -p /out/state
 
 FROM alpine:3.22 AS geo
