@@ -21,6 +21,7 @@ services:
       additional_contexts:
         panel: ${D256_PANEL_SRC:-https://github.com/dest1256/d256-panel.git#main}
     image: d256-node:latest
+    pull_policy: build
     container_name: d256-node
     restart: unless-stopped
     network_mode: host
