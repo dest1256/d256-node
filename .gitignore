@@ -4,3 +4,6 @@ build/
 *.key
 *.pem
 .cache/
+db/
+cert/
+data/

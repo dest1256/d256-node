@@ -21,4 +21,4 @@ jobs:
       - name: Lint, test, build
         run: d256-node/dev make verify
       - name: Build runtime image (not pushed)
-        run: cd d256-node && docker build -f Dockerfile -t d256-node:ci --build-context panel=../d256-panel ..
+        run: cd d256-node && docker build -t d256-node:ci --build-context panel=../d256-panel .

@@ -15,29 +15,27 @@
 ## Команды
 `run`, `enroll <panel-url> <token>`, `status`, `logs`, `reload`, `reset`, `version`.
 
-## Регистрация узла
+## Установка и регистрация
+Нужен только Docker. Клонировать репозитории не нужно: узел собирается с GitHub одним compose-файлом.
 1. В панели: **Узлы → Добавить** (имя, публичный адрес) → одноразовый токен (действует 1 час).
-2. На сервере узла (токен через stdin, чтобы не попал в историю и `ps`):
+2. На сервере узла:
 ```
-echo '<token>' | docker run --rm -i -v node-data:/var/lib/d256-node d256-node:local enroll https://panel.example.com -
-docker compose up -d
+mkdir node && cd node
+curl -O https://raw.githubusercontent.com/dest1256/d256-node/main/docker-compose.yml
+echo '<токен>' | docker compose run --rm -T d256-node enroll https://panel.example.com -
+docker compose up -d --build
+docker compose exec d256-node d256-node status
 ```
-Ключ узла создаётся на самом узле и никуда не передаётся. Порт gRPC панели — `8444`. `d256-node status` показывает связь, версию конфига, состояние Xray и размер журнала.
+Рядом с compose-файлом появится папка `data` (ключ и сертификат узла, зашифрованный кэш, офлайн-журнал). Ключ создаётся на самом узле и никуда не передаётся. Порт gRPC панели — `8444` (должен быть открыт на панели), порты inbound'ов узла задаются в панели и открываются в файрволе узла (узел работает в сетевом режиме `host`).
+Обновление: `docker compose up -d --build` (подтянет свежий код; конкретная версия — `D256_NODE_SRC=https://github.com/dest1256/d256-node.git#v1.0.0` и `D256_PANEL_SRC=...d256-panel.git#v1.0.0` в `.env`).
+Бэкап не нужен: при потере папки `data` узел регистрируется заново; недоставленный журнал при этом теряется.
 Отзыв: в панели «Новый токен» (старый сертификат перестаёт приниматься) или удаление узла.
 
 ### Настройка
-Переменные окружения (см. `.env.example`): `D256_LOG_FORMAT` (`text` или `json`; логи идут в stdout), `D256_STATE_DIR` (по умолчанию `/var/lib/d256-node`). Лимит журнала по умолчанию 256 МиБ: при 80 % старые записи сливаются по часам (трафик не теряется, теряется временное разрешение).
-
-## Запуск (Docker)
-```
-cp .env.example .env
-make image && docker compose up -d
-```
-Узел работает в сетевом режиме `host`: порты inbound'ов задаются в панели. Для портов ниже 1024 нужен `NET_BIND_SERVICE` (уже в compose).
-Обновление: пересобрать образ и `docker compose up -d`. Бэкап не нужен: при потере тома узел регистрируется заново (`enroll`); недоставленный журнал при этом теряется.
+Переменные окружения (`.env`, см. `.env.example`): `D256_LOG_FORMAT` (`text` или `json`; логи идут в stdout), `TZ`. Лимит журнала по умолчанию 256 МиБ: при 80 % старые записи сливаются по часам (трафик не теряется, теряется временное разрешение).
 
 ## Разработка (только Docker)
-Репозитории `d256-node` и `d256-panel` должны лежать рядом (общий proto-модуль).
+Для разработки репозитории `d256-node` и `d256-panel` должны лежать рядом (общий proto-модуль); образ — `make image`.
 ```
 ./dev make verify     # линтеры + тесты + сборка + govulncheck
 ./dev bash
@@ -58,9 +56,8 @@ Derived from ideas of [3x-ui](https://github.com/MHSanaei/3x-ui); changes © des
 **What it does.** Dials the panel (outbound gRPC + mTLS), reports host metrics and Xray state; applies the desired state atomically with rollback and changes users/inbounds without restarting Xray; knows client, inbound, source IP, destination domain/IP, port and bytes per connection (wrapper over the xray-core dispatcher, no patches) and reports live connections plus hourly aggregates. **Offline:** runs from an encrypted config cache, journals usage on disk (only while disconnected), enforces client limits itself (quota, expiry, device count), then redelivers the journal; the panel accepts each batch exactly once and its state wins.
 
 **Commands:** `run`, `enroll <panel-url> <token>`, `status`, `logs`, `reload`, `reset`, `version`.
-**Enroll:** *Nodes → Add* in the panel gives a one-time token (1 hour); on the node server run `echo '<token>' | docker run --rm -i -v node-data:/var/lib/d256-node d256-node:local enroll https://panel.example.com -`, then `docker compose up -d`. The key is generated on the node and never leaves it.
-**Run:** `cp .env.example .env`, `make image && docker compose up -d` (host networking; inbound ports are set in the panel). Logs go to stdout (`D256_LOG_FORMAT=text|json`).
-**Update:** rebuild the image and `docker compose up -d`. **Backup:** none needed — re-enroll if the volume is lost (an undelivered journal is lost with it).
+**Install and enroll** (Docker only, no clone): *Nodes → Add* in the panel gives a one-time token (1 hour); on the node server `mkdir node && cd node`, `curl -O https://raw.githubusercontent.com/dest1256/d256-node/main/docker-compose.yml`, `echo '<token>' | docker compose run --rm -T d256-node enroll https://panel.example.com -`, `docker compose up -d --build`. The compose file builds the node and the panel's proto module from GitHub and keeps the state in `./data` (key, certificate, sealed cache, journal); the key is generated on the node and never leaves it. Host networking: open the inbound ports you configure in the panel; the panel's gRPC port is `8444`. Logs go to stdout (`D256_LOG_FORMAT=text|json`).
+**Update:** `docker compose up -d --build` (pin versions with `D256_NODE_SRC` / `D256_PANEL_SRC`, e.g. `https://github.com/dest1256/d256-node.git#v1.0.0`). **Backup:** none needed — re-enroll if `data` is lost (an undelivered journal is lost with it).
 **Development (Docker only):** keep `d256-node` and `d256-panel` side by side, then `./dev make verify`.
 
 **Security and limitations.** The cache and journal are encrypted (XChaCha20-Poly1305) with a key derived from the node's private key on the same disk: protection against tampering and casual reading, not against root on the node server; there is no separate "protected mode" — use a trusted server. A crash while online may lose at most one 5 s interval of not-yet-sent usage. The device limit counts simultaneously active source IPs.

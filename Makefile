@@ -43,7 +43,7 @@ build: ## Static binary ./build/d256-node
 
 .PHONY: image
 image: ## Runtime image (needs ../d256-panel next to this repo)
-	docker build -f Dockerfile -t d256-node:local --build-context panel=../d256-panel ..
+	docker build -t d256-node:local --build-context panel=../d256-panel .
 
 .PHONY: verify
 verify: lint test build vulncheck ## Full gate (mirrors CI)
