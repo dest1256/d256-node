@@ -51,3 +51,38 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh release create "$GITHUB_REF_NAME" d256-node/dist/* --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" --generate-notes
+
+  # The runtime image (linux/amd64 and linux/arm64) is published next to the binaries, so servers only pull it.
+  image:
+    needs: release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+        with: { path: d256-node }
+      - uses: actions/checkout@v4
+        with: { repository: dest1256/d256-panel, path: d256-panel }
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=ref,event=tag
+            type=raw,value=latest
+      - uses: docker/build-push-action@v6
+        with:
+          context: ./d256-node
+          build-contexts: panel=./d256-panel
+          platforms: linux/amd64,linux/arm64
+          build-args: VERSION=${{ github.ref_name }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}

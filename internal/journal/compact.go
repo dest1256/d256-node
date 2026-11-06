@@ -116,27 +116,28 @@ func (j *Journal) compactLocked() error {
 	})
 }
 
-// mergeConns sums per-destination usage that falls on the same client, inbound, destination, network
-// and hour; entries of different hours stay separate, so merging never blurs the hourly resolution.
+// mergeConns sums per-destination usage that falls on the same client, inbound, destination, network,
+// source address and hour; entries of different hours stay separate, so merging never blurs the hourly resolution.
 func mergeConns(a, b []*pb.ConnEntry) []*pb.ConnEntry {
 	type key struct {
-		email, inbound, dest, network string
-		hour                          int64
+		email, inbound, dest, network, srcIP string
+		hour                                 int64
 	}
 	sum := map[key]*pb.ConnEntry{}
 	var order []key
 	for _, list := range [][]*pb.ConnEntry{a, b} {
 		for _, e := range list {
-			k := key{e.Email, e.InboundTag, e.Dest, e.Network, e.HourUnix}
+			k := key{e.Email, e.InboundTag, e.Dest, e.Network, e.SourceIp, e.HourUnix}
 			if cur, ok := sum[k]; ok {
 				cur.Up += e.Up
 				cur.Down += e.Down
 				cur.Conns += e.Conns
+				cur.LastUnix = max(cur.LastUnix, e.LastUnix)
 				continue
 			}
 			sum[k] = &pb.ConnEntry{
 				Email: e.Email, InboundTag: e.InboundTag, Dest: e.Dest, Network: e.Network,
-				HourUnix: e.HourUnix, Up: e.Up, Down: e.Down, Conns: e.Conns,
+				HourUnix: e.HourUnix, Up: e.Up, Down: e.Down, Conns: e.Conns, SourceIp: e.SourceIp, LastUnix: e.LastUnix,
 			}
 			order = append(order, k)
 		}

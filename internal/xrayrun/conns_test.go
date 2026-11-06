@@ -152,6 +152,9 @@ func TestConnectionsAreAttributedToClientSourceAndDestination(t *testing.T) {
 	if len(second) != 1 || second[0].Conns != 0 || second[0].Up < 500 || second[0].Down < 500 {
 		t.Fatalf("second drain = %+v", second)
 	}
+	if first[0].SourceIp != "127.0.0.1" || first[0].LastUnix < time.Now().Add(-time.Minute).Unix() || first[0].LastUnix > time.Now().Add(time.Minute).Unix() {
+		t.Fatalf("source address / last use missing: %+v", first[0])
+	}
 	if first[0].Dest != "127.0.0.1" || first[0].Network != "tcp" || first[0].InboundTag != "in1" || first[0].HourUnix != time.Now().Truncate(time.Hour).Unix() {
 		t.Fatalf("entry = %+v", first[0])
 	}

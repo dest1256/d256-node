@@ -14,7 +14,7 @@ require (
 )
 
 require (
-	github.com/andybalholm/brotli v1.2.3 // indirect
+	github.com/andybalholm/brotli v1.2.7 // indirect
 	github.com/apernet/quic-go v0.61.1-0.20260806010916-184d081eef3e // indirect
 	github.com/ebitengine/purego v0.11.2 // indirect
 	github.com/ghodss/yaml v1.0.1-0.20220118164431-d8423dcdf344 // indirect
@@ -25,7 +25,7 @@ require (
 	github.com/huin/goupnp v1.2.0 // indirect
 	github.com/jackpal/go-nat-pmp v1.0.2 // indirect
 	github.com/juju/ratelimit v1.0.2 // indirect
-	github.com/klauspost/compress v1.20.0 // indirect
+	github.com/klauspost/compress v1.20.2 // indirect
 	github.com/klauspost/cpuid/v2 v2.4.1 // indirect
 	github.com/koron/go-ssdp v0.0.4 // indirect
 	github.com/kr/text v0.2.0 // indirect

@@ -1,6 +1,8 @@
 # Changelog
 
 ## Unreleased
+- Per-destination usage carries the source address and the last time of use (journal compaction keeps addresses apart).
+- Prebuilt images (linux/amd64, linux/arm64) are published to ghcr.io/dest1256/d256-node by the Release workflow; docker-compose.yml pulls them.
 - Self-update on the panel's request: signed (Ed25519) release binaries, verified, test-run, installed under data/bin, hand-over by exec, automatic fallback after 3 failed starts; `d256-sign` tool and the Release workflow.
 - docker-compose: builds the node and the panel's proto module from GitHub, state in ./data; the Dockerfile context is now this repository.
 - Stage 6: dispatcher wrapper (no xray-core patches) records client, inbound, source IP, destination, port, network and bytes per connection; sends live connections and hourly aggregates (journaled, compacted, exactly-once); enforces the device limit, offline too.

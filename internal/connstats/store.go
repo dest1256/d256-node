@@ -24,13 +24,14 @@ const (
 )
 
 type aggKey struct {
-	email, inbound, dest, network string
-	hour                          int64
+	email, inbound, dest, network, srcIP string
+	hour                                 int64
 }
 
 type aggVal struct {
 	up, down uint64
 	conns    uint32
+	last     int64 // unix seconds of the latest activity
 }
 
 // conn is one live connection. The byte counters are written from the data path, everything else is
@@ -126,7 +127,8 @@ func (s *Store) addLocked(c *conn, dest string, up, down uint64, newConn bool) {
 	if up == 0 && down == 0 && !newConn {
 		return
 	}
-	k := aggKey{c.email, c.inbound, truncate(dest), c.network, s.now().Truncate(time.Hour).Unix()}
+	now := s.now()
+	k := aggKey{c.email, c.inbound, truncate(dest), c.network, c.srcIP, now.Truncate(time.Hour).Unix()}
 	v := s.agg[k]
 	if v == nil {
 		v = &aggVal{}
@@ -134,6 +136,7 @@ func (s *Store) addLocked(c *conn, dest string, up, down uint64, newConn bool) {
 	}
 	v.up += up
 	v.down += down
+	v.last = now.Unix()
 	if newConn {
 		v.conns++
 	}
@@ -172,7 +175,7 @@ func (s *Store) Drain() []*pb.ConnEntry {
 	for k, v := range s.agg {
 		out = append(out, &pb.ConnEntry{
 			Email: k.email, InboundTag: k.inbound, Dest: k.dest, Network: k.network,
-			HourUnix: k.hour, Up: v.up, Down: v.down, Conns: v.conns,
+			HourUnix: k.hour, Up: v.up, Down: v.down, Conns: v.conns, SourceIp: k.srcIP, LastUnix: v.last,
 		})
 	}
 	s.agg = map[aggKey]*aggVal{}

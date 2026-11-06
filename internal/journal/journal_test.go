@@ -247,3 +247,25 @@ func TestPerDestinationUsageSurvivesStorageAndCompactionPerHour(t *testing.T) {
 		t.Fatalf("hourly resolution lost: %v", hours)
 	}
 }
+
+func TestMergeKeepsDevicesApartAndTheLatestUse(t *testing.T) {
+	hour := int64(1_700_000_000) / 3600 * 3600
+	a := []*pb.ConnEntry{
+		{Email: "a@x", InboundTag: "in", Dest: "d.example", Network: "tcp", HourUnix: hour, Up: 1, Down: 2, Conns: 1, SourceIp: "10.0.0.1", LastUnix: hour + 100},
+		{Email: "a@x", InboundTag: "in", Dest: "d.example", Network: "tcp", HourUnix: hour, Up: 5, Down: 5, Conns: 1, SourceIp: "10.0.0.2", LastUnix: hour + 50},
+	}
+	b := []*pb.ConnEntry{
+		{Email: "a@x", InboundTag: "in", Dest: "d.example", Network: "tcp", HourUnix: hour, Up: 10, Down: 20, Conns: 2, SourceIp: "10.0.0.1", LastUnix: hour + 300},
+	}
+	got := mergeConns(a, b)
+	if len(got) != 2 {
+		t.Fatalf("addresses must stay separate: %+v", got)
+	}
+	first := got[0]
+	if first.SourceIp != "10.0.0.1" || first.Up != 11 || first.Down != 22 || first.Conns != 3 || first.LastUnix != hour+300 {
+		t.Fatalf("merged = %+v", first)
+	}
+	if second := got[1]; second.SourceIp != "10.0.0.2" || second.LastUnix != hour+50 {
+		t.Fatalf("second = %+v", second)
+	}
+}

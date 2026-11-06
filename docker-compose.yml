@@ -1,9 +1,9 @@
-# d256 node. Built from GitHub (the node and the panel's proto module); the node's state lives next to this file:
+# d256 node. The image comes prebuilt from GitHub (ghcr.io); the node's state lives next to this file:
 #   ./data  node key and certificate, sealed config cache and the offline traffic journal
 #
 # 1) In the panel: Nodes -> Add, copy the one-time token.
 # 2) Enroll (once):  echo '<token>' | docker compose run --rm -T d256-node enroll https://panel.example.com -
-# 3) Run:            docker compose up -d --build        Update: the same command (pulls the latest source)
+# 3) Run:            docker compose up -d        Update: docker compose pull && docker compose up -d
 # Host networking: Xray inbounds listen on the ports you configure in the panel, so open them in the firewall.
 services:
   init:
@@ -15,13 +15,10 @@ services:
       - ./data:/var/lib/d256-node
 
   d256-node:
-    build:
-      # Use a tag or branch after '#', e.g. ...d256-node.git#v1.0.0
-      context: ${D256_NODE_SRC:-https://github.com/dest1256/d256-node.git#main}
-      additional_contexts:
-        panel: ${D256_PANEL_SRC:-https://github.com/dest1256/d256-panel.git#main}
-    image: d256-node:latest
-    pull_policy: build
+    # A prebuilt image from GitHub Actions (linux/amd64 and linux/arm64): nothing is compiled on your server.
+    # Pin a version with D256_NODE_TAG=v1.1.0 in .env; the default follows the latest release.
+    image: ghcr.io/dest1256/d256-node:${D256_NODE_TAG:-latest}
+    pull_policy: always
     container_name: d256-node
     restart: unless-stopped
     network_mode: host

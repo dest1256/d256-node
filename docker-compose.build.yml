@@ -1,0 +1,9 @@
+# Developers only: build the node image from checkouts (d256-node and d256-panel side by side).
+#   docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
+services:
+  d256-node:
+    build:
+      context: .
+      additional_contexts:
+        panel: ../d256-panel
+    pull_policy: build
